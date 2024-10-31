@@ -1,0 +1,113 @@
+import requests
+from bs4 import BeautifulSoup
+import json
+import time
+
+# Define the scraper class
+class MedicalDataScraper:
+    def __init__(self):
+        self.data = {
+            "allergies": [],
+            "drug_interactions": [],
+            "pathogens": [],
+            "multi_pathogen_interactions": [],
+            "vital_sign_thresholds": []
+        }
+        
+    # Function to scrape allergy data
+    def scrape_allergies(self, url):
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Example: Extract allergy risk factors and severity information
+        for entry in soup.select('.allergy-entry'):
+            allergy = {
+                "allergen": entry.find("h2").get_text(),
+                "severity": entry.find("span", class_="severity").get_text(),
+                "common_reactions": entry.find("p", class_="reactions").get_text(),
+                "risk_factors": entry.find("ul", class_="risk-factors").get_text()
+            }
+            self.data["allergies"].append(allergy)
+
+    # Function to scrape drug interactions
+    def scrape_drug_interactions(self, url):
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Example: Extract drug interaction details
+        for interaction in soup.select('.interaction-entry'):
+            drug_interaction = {
+                "drug_a": interaction.find("span", class_="drug-a").get_text(),
+                "drug_b": interaction.find("span", class_="drug-b").get_text(),
+                "interaction_type": interaction.find("span", class_="type").get_text(),
+                "effect": interaction.find("p", class_="effect").get_text()
+            }
+            self.data["drug_interactions"].append(drug_interaction)
+    
+    # Function to scrape pathogen characteristics
+    def scrape_pathogens(self, url):
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Example: Extract pathogen details
+        for pathogen in soup.select('.pathogen-entry'):
+            pathogen_data = {
+                "name": pathogen.find("h2").get_text(),
+                "resistance": pathogen.find("span", class_="resistance").get_text(),
+                "transmission": pathogen.find("p", class_="transmission").get_text(),
+                "mortality_rate": pathogen.find("span", class_="mortality").get_text()
+            }
+            self.data["pathogens"].append(pathogen_data)
+
+    # Function to scrape multi-pathogen interactions
+    def scrape_multi_pathogen_interactions(self, url):
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Example: Extract data on pathogen interactions
+        for interaction in soup.select('.interaction-entry'):
+            pathogen_interaction = {
+                "pathogen_a": interaction.find("span", class_="pathogen-a").get_text(),
+                "pathogen_b": interaction.find("span", class_="pathogen-b").get_text(),
+                "interaction_effect": interaction.find("p", class_="effect").get_text(),
+                "impact_on_host": interaction.find("span", class_="impact").get_text()
+            }
+            self.data["multi_pathogen_interactions"].append(pathogen_interaction)
+    
+    # Function to scrape vital sign thresholds
+    def scrape_vital_sign_thresholds(self, url):
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Example: Extract thresholds for vital signs based on patient demographics
+        for entry in soup.select('.vital-threshold'):
+            threshold_data = {
+                "age_group": entry.find("span", class_="age-group").get_text(),
+                "heart_rate": entry.find("span", class_="heart-rate").get_text(),
+                "blood_pressure": entry.find("span", class_="blood-pressure").get_text(),
+                "respiratory_rate": entry.find("span", class_="respiratory-rate").get_text()
+            }
+            self.data["vital_sign_thresholds"].append(threshold_data)
+
+    # Function to save data to JSON file for physics engine integration
+    def save_data(self, filename="medical_data.json"):
+        with open(filename, 'w') as f:
+            json.dump(self.data, f, indent=4)
+        print(f"Data saved to {filename}")
+
+    # Run all scrapers with a pause to respect server requests
+    def run_scrapers(self):
+        self.scrape_allergies("https://example.com/allergies")
+        time.sleep(1)  # Pause to avoid overloading the server
+        self.scrape_drug_interactions("https://example.com/drug-interactions")
+        time.sleep(1)
+        self.scrape_pathogens("https://example.com/pathogens")
+        time.sleep(1)
+        self.scrape_multi_pathogen_interactions("https://example.com/multi-pathogen-interactions")
+        time.sleep(1)
+        self.scrape_vital_sign_thresholds("https://example.com/vital-signs")
+        self.save_data()
+
+# Usage example
+scraper = MedicalDataScraper()
+scraper.run_scrapers()
