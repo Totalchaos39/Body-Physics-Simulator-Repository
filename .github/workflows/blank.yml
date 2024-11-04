@@ -1,0 +1,42 @@
+name: Upload Simulation Results
+
+on:
+  push:
+    branches:
+      - main  # Trigger when changes are pushed to the main branch
+  schedule:
+    - cron: '0 0 * * *'  # Optional: Schedule to run daily at midnight
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  upload_data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'  # Specify Python version if needed
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas  # Install necessary dependencies if required
+
+      - name: Generate Simulation Results
+        run: |
+          # Script that generates or formats your simulation data
+          python /path/to/generate_simulation_data.py  # Replace with your script path
+          # Assuming this script saves a file like 'simulation_results.csv'
+
+      - name: Commit and Push Simulation Results
+        run: |
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          mv simulation_results.csv immune_response/simulation_results_${TIMESTAMP}.csv
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add immune_response/simulation_results_${TIMESTAMP}.csv
+          git commit -m "Add simulation results from $TIMESTAMP"
+          git push
