@@ -5,8 +5,8 @@ on:
     branches:
       - main  # Trigger when changes are pushed to the main branch
   schedule:
-    - cron: '0 0 * * *'  # Optional: Schedule to run daily at midnight
-  workflow_dispatch:  # Allows manual trigger
+    - cron: '0 0 * * *'  # Schedule to run daily at midnight UTC
+  workflow_dispatch:  # Allows manual trigger via GitHub interface
 
 jobs:
   upload_data:
@@ -23,20 +23,73 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pandas  # Install necessary dependencies if required
+          pip install pandas numpy requests  # Install necessary dependencies
 
       - name: Generate Simulation Results
         run: |
-          # Script that generates or formats your simulation data
-          python /path/to/generate_simulation_data.py  # Replace with your script path
-          # Assuming this script saves a file like 'simulation_results.csv'
+          # Run the simulation data generation script
+          python /path/to/generate_simulation_data.py  # Replace with the actual path
 
       - name: Commit and Push Simulation Results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
           mv simulation_results.csv immune_response/simulation_results_${TIMESTAMP}.csv
+
+          # Configure git user for commits
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add, commit, and push changes
           git add immune_response/simulation_results_${TIMESTAMP}.csv
           git commit -m "Add simulation results from $TIMESTAMP"
           git push
+
+      - name: Upload JSON Results to GitHub via API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: "username/repo_name"  # Replace with your repository path
+          GITHUB_FILE_PATH: "results/simulation_results.json"  # File path within the repo
+        run: |
+          python - <<EOF
+import json
+import requests
+from datetime import datetime
+
+# Load simulation results
+with open("simulation_results.json", "r") as f:
+    results = json.load(f)
+
+# GitHub API URL for the file
+url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3+json"
+}
+
+# Check if the file already exists to get its SHA
+response = requests.get(url, headers=headers)
+if response.status_code == 200:
+    sha = response.json()["sha"]
+    action = "Updating"
+else:
+    sha = None
+    action = "Creating new"
+
+print(f"{action} file on GitHub at {GITHUB_FILE_PATH}.")
+
+# Prepare data payload for GitHub API
+data = {
+    "message": f"Simulation results uploaded on {datetime.now().isoformat()}",
+    "content": json.dumps(results).encode("utf-8").decode("utf-8"),  # Encode content in Base64
+    "sha": sha if sha else None
+}
+
+# Push data to GitHub
+response = requests.put(url, headers=headers, json=data)
+if response.status_code == 201 or response.status_code == 200:
+    print(f"Successfully {action.lower()}d simulation results.")
+else:
+    print(f"Failed to {action.lower()} simulation results: {response.text}")
+EOF
