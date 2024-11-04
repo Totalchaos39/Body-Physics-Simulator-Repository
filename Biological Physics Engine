@@ -1,0 +1,217 @@
+import json
+import math
+import requests
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from mayavi import mlab
+
+# ------------- USER-DEFINED SIMULATION PARAMETERS (INPUT SECTION) -------------
+
+# --- Digestive System Settings ---
+FOOD_SCHEDULE = [
+    {"time": "08:00", "food_name": "banana", "amount_grams": 100},
+    {"time": "12:00", "food_name": "chicken breast", "amount_grams": 150},
+    {"time": "18:00", "food_name": "broccoli", "amount_grams": 100}
+]  # Foods to be ingested at specified times
+
+# --- Temperature Regulation Settings ---
+TEMPERATURE_THRESHOLD = 37.5          # Body temperature threshold for triggering cooling (in Celsius)
+SWEAT_RATE_BASE = 0.5                 # Base sweat rate (L/hr) at moderate temperature
+MAX_SWEAT_RATE = 1.5                  # Maximum sweat rate at high temperatures (L/hr)
+
+# --- Food Data ---
+FOOD_DATA_FILE = "food_data.csv"  # Path to the CSV file containing USDA nutritional data
+
+# --- GitHub Integration Settings ---
+GITHUB_TOKEN = "your_github_token"  # Replace with your GitHub personal access token
+GITHUB_REPO = "username/repo_name"  # Replace with your GitHub repository in "username/repo_name" format
+GITHUB_FILE_PATH = "results/simulation_results.json"  # Path in the repo where results will be stored
+
+# --- Visualization Settings ---
+ENABLE_VISUALIZATION = True         # Set to True to enable Mayavi visualization
+
+# -----------------------------------------------------------------------------
+
+
+# Physics Engine for Biological Simulations
+class BiologicalPhysicsEngine:
+    def __init__(self, json_file="medical_data.json"):
+        with open(json_file, 'r') as f:
+            self.data = json.load(f)
+        self.food_data = pd.read_csv(FOOD_DATA_FILE)
+
+    def get_nutritional_values(self, food_name):
+        food = self.food_data[self.food_data['food_name'].str.contains(food_name, case=False, na=False)]
+        if not food.empty:
+            return {
+                "carbohydrates": food.iloc[0]['carbohydrate'],
+                "protein": food.iloc[0]['protein'],
+                "fat": food.iloc[0]['fat']
+            }
+        else:
+            print(f"Food item '{food_name}' not found in dataset.")
+            return None
+
+    def calculate_energy_from_food(self, food_name, amount_grams=100):
+        nutrients = self.get_nutritional_values(food_name)
+        if nutrients:
+            carbs_energy = nutrients["carbohydrates"] * 4 * (amount_grams / 100)
+            protein_energy = nutrients["protein"] * 4 * (amount_grams / 100)
+            fat_energy = nutrients["fat"] * 9 * (amount_grams / 100)
+            total_energy = carbs_energy + protein_energy + fat_energy
+            return total_energy
+        else:
+            return 0
+
+    def simulate_temperature_effects(self, current_temperature):
+        if current_temperature > TEMPERATURE_THRESHOLD:
+            sweat_rate = self.calculate_sweat_rate(current_temperature)
+            heat_loss = self.calculate_evaporative_cooling(sweat_rate)
+            print(f"Sweating activated: Sweat rate = {sweat_rate} L/hr, Heat loss = {heat_loss} kcal/hr")
+            return {
+                "sweat_rate": sweat_rate,
+                "heat_loss": heat_loss,
+                "cooling_active": True
+            }
+        else:
+            return {
+                "sweat_rate": 0,
+                "heat_loss": 0,
+                "cooling_active": False
+            }
+
+    def calculate_sweat_rate(self, current_temperature):
+        temp_difference = max(current_temperature - TEMPERATURE_THRESHOLD, 0)
+        sweat_rate = min(SWEAT_RATE_BASE + temp_difference * 0.2, MAX_SWEAT_RATE)
+        return sweat_rate
+
+    def calculate_evaporative_cooling(self, sweat_rate):
+        return sweat_rate * 580
+
+    def simulate_digestive_process(self, start_time, end_time):
+        results = []
+        time_interval = timedelta(hours=1)  # 1-hour time interval for simulation
+        current_time = start_time
+
+        while current_time <= end_time:
+            for food_entry in FOOD_SCHEDULE:
+                food_time = datetime.strptime(food_entry["time"], "%H:%M").time()
+                if current_time.time() == food_time:
+                    food_name = food_entry["food_name"]
+                    amount_grams = food_entry["amount_grams"]
+                    nutrient_data = self.get_nutritional_values(food_name)
+                    energy_intake = self.calculate_energy_from_food(food_name, amount_grams)
+
+                    digestion_result = {
+                        "time": current_time.isoformat(),
+                        "food_name": food_name,
+                        "carbohydrates": nutrient_data["carbohydrates"] * (amount_grams / 100),
+                        "protein": nutrient_data["protein"] * (amount_grams / 100),
+                        "fat": nutrient_data["fat"] * (amount_grams / 100),
+                        "energy_kcal": energy_intake
+                    }
+
+                    stomach, small_intestine, large_intestine = self.simulate_nutrient_absorption(digestion_result)
+                    digestion_result["stomach_absorption"] = stomach
+                    digestion_result["small_intestine_absorption"] = small_intestine
+                    digestion_result["large_intestine_absorption"] = large_intestine
+
+                    results.append(digestion_result)
+
+            current_time += time_interval
+
+        return results
+
+    def simulate_nutrient_absorption(self, digestion_data):
+        stomach_absorption_rate = 0.2
+        small_intestine_absorption_rate = 0.7
+        large_intestine_absorption_rate = 0.1
+
+        stomach = {
+            "carbohydrates": digestion_data["carbohydrates"] * stomach_absorption_rate,
+            "protein": digestion_data["protein"] * stomach_absorption_rate,
+            "fat": digestion_data["fat"] * stomach_absorption_rate
+        }
+
+        small_intestine = {
+            "carbohydrates": digestion_data["carbohydrates"] * small_intestine_absorption_rate,
+            "protein": digestion_data["protein"] * small_intestine_absorption_rate,
+            "fat": digestion_data["fat"] * small_intestine_absorption_rate
+        }
+
+        large_intestine = {
+            "carbohydrates": digestion_data["carbohydrates"] * large_intestine_absorption_rate,
+            "protein": digestion_data["protein"] * large_intestine_absorption_rate,
+            "fat": digestion_data["fat"] * large_intestine_absorption_rate
+        }
+
+        return stomach, small_intestine, large_intestine
+
+    def run_all_simulations(self):
+        start_time = datetime.strptime("08:00", "%H:%M")
+        end_time = datetime.strptime("20:00", "%H:%M")
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "digestive_process": self.simulate_digestive_process(start_time, end_time),
+            "temperature_effects": self.simulate_temperature_effects(TEMPERATURE)
+        }
+        return results
+
+    def push_to_github(self, results):
+        result_json = json.dumps(results, indent=4)
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            sha = response.json().get("sha")
+            action = "Updating existing"
+        else:
+            sha = None
+            action = "Creating new"
+        print(f"{action} file on GitHub at {GITHUB_FILE_PATH}.")
+
+        data = {
+            "message": f"Simulation results uploaded on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "content": result_json.encode("utf-8").decode("utf-8"),
+            "branch": "main",
+        }
+        if sha:
+            data["sha"] = sha
+
+        response = requests.put(url, headers=headers, json=data)
+        if response.status_code in [200, 201]:
+            print("Successfully pushed results to GitHub.")
+        else:
+            print(f"Failed to push to GitHub: {response.json()}")
+
+    # Visualization with Mayavi
+    def visualize_results(self, results):
+        if not ENABLE_VISUALIZATION:
+            print("Visualization disabled.")
+            return
+
+        mlab.figure(size=(800, 600), bgcolor=(0.9, 0.9, 0.9))
+        x, y, z, scalars = [], [], [], []
+
+        for i, data in enumerate(results["digestive_process"]):
+            x.append(i)
+            y.append(data["energy_kcal"])
+            z.append(i * 0.5)
+            scalars.append(data["energy_kcal"])
+
+                x, y, z, scalars = np.array(x), np.array(y), np.array(z), np.array(scalars)
+        mlab.points3d(x, y, z, scalars, scale_factor=0.1, colormap="summer")
+        mlab.title("Energy Absorption Over Digestive Timeline")
+        mlab.colorbar(title="Energy (kcal)", orientation="vertical")
+        mlab.show()
+
+# Usage Example
+engine = BiologicalPhysicsEngine("medical_data.json")
+simulation_results = engine.run_all_simulations()
+
+# Display, push to GitHub, and visualize results
+print(json.dumps(simulation_results, indent=4))
+engine.push_to_github(simulation_results)
+engine.visualize_results(simulation_results)
