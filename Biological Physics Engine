@@ -20,6 +20,10 @@ TEMPERATURE_THRESHOLD = 37.5          # Body temperature threshold for triggerin
 SWEAT_RATE_BASE = 0.5                 # Base sweat rate (L/hr) at moderate temperature
 MAX_SWEAT_RATE = 1.5                  # Maximum sweat rate at high temperatures (L/hr)
 
+# --- Hydration and Electrolyte Settings ---
+BASE_WATER_INTAKE = 2.0               # Base water intake (L per day)
+ELECTROLYTES = {"sodium": 140, "potassium": 4.5, "calcium": 1.2}  # mmol/L baseline
+
 # --- Food Data ---
 FOOD_DATA_FILE = "food_data.csv"  # Path to the CSV file containing USDA nutritional data
 
@@ -47,7 +51,9 @@ class BiologicalPhysicsEngine:
             return {
                 "carbohydrates": food.iloc[0]['carbohydrate'],
                 "protein": food.iloc[0]['protein'],
-                "fat": food.iloc[0]['fat']
+                "fat": food.iloc[0]['fat'],
+                "vitamin_c": food.iloc[0].get('vitamin_c', 0),
+                "iron": food.iloc[0].get('iron', 0)
             }
         else:
             print(f"Food item '{food_name}' not found in dataset.")
@@ -89,9 +95,28 @@ class BiologicalPhysicsEngine:
     def calculate_evaporative_cooling(self, sweat_rate):
         return sweat_rate * 580
 
+    def simulate_hydration_and_electrolytes(self, water_intake):
+        hydration_level = BASE_WATER_INTAKE + water_intake
+        electrolyte_levels = {k: v * hydration_level for k, v in ELECTROLYTES.items()}
+        return {
+            "hydration_level": hydration_level,
+            "electrolyte_levels": electrolyte_levels
+        }
+
+    def simulate_genetic_influences(self, gene_name):
+        # ClinVar API or genetic data lookup (mock example for genetic mutation effect)
+        genetic_data = self.get_external_data(f"https://api.ncbi.nlm.nih.gov/clinvar/{gene_name}", params={})
+        if genetic_data and "drug_response" in genetic_data:
+            return {
+                "gene": gene_name,
+                "mutation": genetic_data.get("mutation", "wild-type"),
+                "effect_on_drug": genetic_data["drug_response"]
+            }
+        return {"gene": gene_name, "mutation": "unknown", "effect_on_drug": "neutral"}
+
     def simulate_digestive_process(self, start_time, end_time):
         results = []
-        time_interval = timedelta(hours=1)  # 1-hour time interval for simulation
+        time_interval = timedelta(hours=1)
         current_time = start_time
 
         while current_time <= end_time:
@@ -109,6 +134,8 @@ class BiologicalPhysicsEngine:
                         "carbohydrates": nutrient_data["carbohydrates"] * (amount_grams / 100),
                         "protein": nutrient_data["protein"] * (amount_grams / 100),
                         "fat": nutrient_data["fat"] * (amount_grams / 100),
+                        "vitamin_c": nutrient_data.get("vitamin_c", 0) * (amount_grams / 100),
+                        "iron": nutrient_data.get("iron", 0) * (amount_grams / 100),
                         "energy_kcal": energy_intake
                     }
 
@@ -131,19 +158,25 @@ class BiologicalPhysicsEngine:
         stomach = {
             "carbohydrates": digestion_data["carbohydrates"] * stomach_absorption_rate,
             "protein": digestion_data["protein"] * stomach_absorption_rate,
-            "fat": digestion_data["fat"] * stomach_absorption_rate
+            "fat": digestion_data["fat"] * stomach_absorption_rate,
+            "vitamin_c": digestion_data["vitamin_c"] * stomach_absorption_rate,
+            "iron": digestion_data["iron"] * stomach_absorption_rate
         }
 
         small_intestine = {
             "carbohydrates": digestion_data["carbohydrates"] * small_intestine_absorption_rate,
             "protein": digestion_data["protein"] * small_intestine_absorption_rate,
-            "fat": digestion_data["fat"] * small_intestine_absorption_rate
+            "fat": digestion_data["fat"] * small_intestine_absorption_rate,
+            "vitamin_c": digestion_data["vitamin_c"] * small_intestine_absorption_rate,
+            "iron": digestion_data["iron"] * small_intestine_absorption_rate
         }
 
         large_intestine = {
             "carbohydrates": digestion_data["carbohydrates"] * large_intestine_absorption_rate,
             "protein": digestion_data["protein"] * large_intestine_absorption_rate,
-            "fat": digestion_data["fat"] * large_intestine_absorption_rate
+            "fat": digestion_data["fat"] * large_intestine_absorption_rate,
+            "vitamin_c": digestion_data["vitamin_c"] * large_intestine_absorption_rate,
+            "iron": digestion_data["iron"] * large_intestine_absorption_rate
         }
 
         return stomach, small_intestine, large_intestine
@@ -154,7 +187,9 @@ class BiologicalPhysicsEngine:
         results = {
             "timestamp": datetime.now().isoformat(),
             "digestive_process": self.simulate_digestive_process(start_time, end_time),
-            "temperature_effects": self.simulate_temperature_effects(TEMPERATURE)
+            "temperature_effects": self.simulate_temperature_effects(TEMPERATURE),
+            "hydration_electrolytes": self.simulate_hydration_and_electrolytes(water_intake=1.5),
+            "genetic_influences": self.simulate_genetic_influences("CYP2D6")  # Example gene affecting drug metabolism
         }
         return results
 
@@ -173,45 +208,4 @@ class BiologicalPhysicsEngine:
         print(f"{action} file on GitHub at {GITHUB_FILE_PATH}.")
 
         data = {
-            "message": f"Simulation results uploaded on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "content": result_json.encode("utf-8").decode("utf-8"),
-            "branch": "main",
-        }
-        if sha:
-            data["sha"] = sha
-
-        response = requests.put(url, headers=headers, json=data)
-        if response.status_code in [200, 201]:
-            print("Successfully pushed results to GitHub.")
-        else:
-            print(f"Failed to push to GitHub: {response.json()}")
-
-    # Visualization with Mayavi
-    def visualize_results(self, results):
-        if not ENABLE_VISUALIZATION:
-            print("Visualization disabled.")
-            return
-
-        mlab.figure(size=(800, 600), bgcolor=(0.9, 0.9, 0.9))
-        x, y, z, scalars = [], [], [], []
-
-        for i, data in enumerate(results["digestive_process"]):
-            x.append(i)
-            y.append(data["energy_kcal"])
-            z.append(i * 0.5)
-            scalars.append(data["energy_kcal"])
-
-                x, y, z, scalars = np.array(x), np.array(y), np.array(z), np.array(scalars)
-        mlab.points3d(x, y, z, scalars, scale_factor=0.1, colormap="summer")
-        mlab.title("Energy Absorption Over Digestive Timeline")
-        mlab.colorbar(title="Energy (kcal)", orientation="vertical")
-        mlab.show()
-
-# Usage Example
-engine = BiologicalPhysicsEngine("medical_data.json")
-simulation_results = engine.run_all_simulations()
-
-# Display, push to GitHub, and visualize results
-print(json.dumps(simulation_results, indent=4))
-engine.push_to_github(simulation_results)
-engine.visualize_results(simulation_results)
+            "message": f"Simulation results uploaded on {datetime.now(
